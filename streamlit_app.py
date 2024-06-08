@@ -11,7 +11,8 @@ class View:
 
     def show_upload_section(self):
         st.sidebar.title("Upload Your Image")
-        file = st.sidebar.file_uploader("", type=['jpg', 'png', 'jpeg'])
+        file = st.sidebar.file_uploader("Choose an image", label_visibility="collapsed", 
+                                        type=['jpg', 'png', 'jpeg'])
         return file
 
     def show_samples_section(self):
@@ -49,6 +50,11 @@ class View:
     def show_submit_button(self):
         return st.sidebar.button("**Segment Image**")
 
+    def show_prompt_input(self):
+        st.sidebar.title("Segmentation Parameters")
+        text_prompt = st.sidebar.text_input("Write a candidate label")
+        return text_prompt
+
 
 class Controller:
     def __init__(self):
@@ -58,6 +64,8 @@ class Controller:
             st.session_state.input_given = False
         if 'image' not in st.session_state:
             st.session_state.image = None
+        if 'text_prompt' not in st.session_state:
+            st.session_state.text_prompt = ""
 
     def pil_to_bytes(self, img):
         buf = BytesIO()
@@ -93,6 +101,8 @@ class Controller:
         else:
             self.view.show_original_image(left_column, st.session_state.image)
             
+            st.session_state.text_prompt = self.view.show_prompt_input()
+            
             if self.view.show_submit_button():
                 segmented_image = self.run_sam(st.session_state.image)
                 self.view.show_segmented_image(right_column, segmented_image)
@@ -102,6 +112,7 @@ class Controller:
             if self.view.show_refresh_button():
                 st.session_state.input_given = False
                 st.session_state.image = None
+                st.session_state.text_prompt = ""
                 st.rerun()
 
 
