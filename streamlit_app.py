@@ -12,39 +12,6 @@ SEGMENT_ENDPOINT = f"http://{ENDPOINT}/segment/"
 UPLOAD_ENDPOINT = f"http://{ENDPOINT}/upload/"
 
 
-def show_mask(mask, mask_color=None, alpha=0.5):
-    if mask_color is not None:
-        color = np.concatenate([mask_color, np.array([alpha])], axis=0)
-    else:
-        color = np.array([251 / 255, 252 / 255, 30 / 255, alpha])
-    h, w = mask.shape[-2:]
-    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
-    return mask_image
-
-
-def visualize_overlay(img_3D, gt_3D, seg_3D, idx=0, alpha=0.6):
-    # Check if the image is grayscale and convert to RGB
-    if img_3D[idx].ndim == 2:
-        img_3D_rgb = np.stack((img_3D[idx],) * 3, axis=-1)
-    else:
-        img_3D_rgb = img_3D[idx]
-    # Normalize the image to 0-255 range
-    img_3D_rgb = (img_3D_rgb * 255).astype(np.uint8)
-    # Resize the image to fit the overlay size if necessary
-    img_resized = np.array(Image.fromarray(img_3D_rgb).resize((512, 512)))
-    # Create the overlay figure
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.imshow(img_resized)
-    # Add the mask
-    mask_color = [0.80, 0.82, 0.36]
-    mask_image = (show_mask(seg_3D[idx], mask_color, alpha) * 255).astype(np.uint8)
-    mask_resized = np.array(Image.fromarray(mask_image).resize((512, 512)))
-    ax.imshow(mask_resized, alpha=alpha)
-    ax.axis('off')
-    fig.tight_layout()
-    return fig
-
-
 class View:
     def __init__(self):
         st.set_page_config(page_title="Fast MedSAM", page_icon="✂️", layout="wide")
@@ -76,14 +43,46 @@ class View:
         with left_column:
             st.subheader("Original Image")
             st.image(original_image)
+    
+    def show_mask(self, mask, mask_color=None, alpha=0.5):
+        if mask_color is not None:
+            color = np.concatenate([mask_color, np.array([alpha])], axis=0)
+        else:
+            color = np.array([251 / 255, 252 / 255, 30 / 255, alpha])
+        h, w = mask.shape[-2:]
+        mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+        return mask_image
+    
+    def visualize_overlay(self, img_3D, gt_3D, seg_3D, idx=0, alpha=0.6):
+        # Check if the image is grayscale and convert to RGB
+        if img_3D[idx].ndim == 2:
+            img_3D_rgb = np.stack((img_3D[idx],) * 3, axis=-1)
+        else:
+            img_3D_rgb = img_3D[idx]
+        # Normalize the image to 0-255 range
+        img_3D_rgb = (img_3D_rgb * 255).astype(np.uint8)
+        # Resize the image to fit the overlay size if necessary
+        img_resized = np.array(Image.fromarray(img_3D_rgb).resize((512, 512)))
+        # Create the overlay figure
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.imshow(img_resized)
+        # Add the mask
+        mask_color = [0.80, 0.82, 0.36]
+        mask_image = (self.show_mask(seg_3D[idx], mask_color, alpha) * 255).astype(np.uint8)
+        mask_resized = np.array(Image.fromarray(mask_image).resize((512, 512)))
+        ax.imshow(mask_resized, alpha=alpha)
+        ax.axis('off')
+        fig.tight_layout()
+        return fig
 
     def show_segmented_image(self, right_column, segmented_image):
         with right_column:
             st.subheader("Segmented Image")
-            imgs, gt_3D, seg_3D = segmented_image['imgs'], segmented_image['gts'], segmented_image['segs']
-            idx = len(imgs) // 2
-            fig = visualize_overlay(imgs, gt_3D, seg_3D, 
-                                    idx=idx, alpha=.6)
+            idx = len(segmented_image['imgs']) // 2
+            fig = self.visualize_overlay(segmented_image['imgs'], 
+                                         segmented_image['gts'], 
+                                         segmented_image['segs'], 
+                                         idx=idx, alpha=.6)
             st.pyplot(fig)
 
     def show_download_button(self, image_bytes):
@@ -138,7 +137,8 @@ class Controller:
 
     def get_mid_layer(self, npz_file_path):
         npz_data = np.load(npz_file_path)
-        imgs = npz_data['imgs']
+        images_key = 'imgs' if 'imgs' in npz_data else 'segs'
+        imgs = npz_data[images_key]
         mid_layer_index = len(imgs) // 2
         mid_layer = imgs[mid_layer_index]
         return mid_layer
@@ -165,8 +165,8 @@ class Controller:
                 segmented_image = np.load(segmented_image)
                 if segmented_image:
                     self.view.show_segmented_image(right_column, segmented_image)
-                    image_bytes = self.pil_to_bytes(segmented_image)
-                    self.view.show_download_button(image_bytes)
+                    # image_bytes = self.pil_to_bytes(segmented_image)
+                    # self.view.show_download_button(image_bytes)
 
             if self.view.show_refresh_button():
                 st.session_state.input_given = False
