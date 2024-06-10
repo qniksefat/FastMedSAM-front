@@ -36,8 +36,8 @@ class View:
                     return BytesIO(open(path, "rb").read())
         return None
 
-    def show_original_image(self, left_column, original_image):
-        with left_column:
+    def show_original_image(self, column, original_image):
+        with column:
             st.subheader("Original Image")
             idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(original_image['imgs']) // 2
             fig = self.visualize_overlay(original_image['imgs'], 
@@ -77,9 +77,9 @@ class View:
         return fig
 
     # with column
-    def show_segmented_image(self, right_column, segmented_image):
+    def show_segmented_image(self, column, segmented_image):
         segmented_image = np.load(segmented_image, allow_pickle=True)
-        with right_column:
+        with column:
             st.subheader("Segmented Image")
             idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(segmented_image['imgs']) // 2
             fig = self.visualize_overlay(segmented_image['imgs'], 
@@ -135,19 +135,13 @@ class Controller:
                 st.error(f"Error segmenting image {image_name}")
                 return None
 
-    # merge with upload_image_to_server
-    def handle_image(self, image_path):
-        if image_path:
-            st.session_state.image = np.load(image_path, allow_pickle=True)
-            st.session_state.input_given = True
-            st.rerun()
-
     def upload_image_to_server(self, file):
         if file:
             resp = requests.post(UPLOAD_ENDPOINT, files={"file": file.getvalue()})
             if resp.status_code == 200:
                 st.session_state.image_name = resp.json().get("filename")
-                self.handle_image(file)
+                st.session_state.image = np.load(file, allow_pickle=True)
+                st.session_state.input_given = True
                 return file
             else:
                 st.error("Error uploading image")
@@ -159,11 +153,13 @@ class Controller:
             uploaded_file = self.view.show_upload_section()
             if uploaded_file:
                 self.upload_image_to_server(uploaded_file)
+                st.rerun()
 
             sample_file = self.view.show_samples_section()
             if sample_file:
                 self.upload_image_to_server(sample_file)
-                
+                st.rerun()
+
         else:
             slice_range = len(st.session_state.image['imgs']) - 1
             st.session_state.slice_index = self.view.show_slice_slider(slice_range)
@@ -188,4 +184,3 @@ class Controller:
 if __name__ == "__main__":
     controller = Controller()
     controller.run()
-
