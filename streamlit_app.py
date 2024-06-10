@@ -32,7 +32,6 @@ class View:
 
     def show_samples_section(self):
         st.sidebar.title("Or Choose a Sample Image")
-        col1, col2 = st.sidebar.columns(2)
         if st.sidebar.button("Rose"):
             return "static/sample1.png"
         if st.sidebar.button("Daisy"):
@@ -42,7 +41,10 @@ class View:
     def show_original_image(self, left_column, original_image):
         with left_column:
             st.subheader("Original Image")
-            st.image(original_image)
+            idx = len(original_image['imgs']) // 2
+            fig = self.visualize_overlay(original_image['imgs'], 
+                                         None, None, idx=idx, alpha=.6)
+            st.pyplot(fig)
     
     def show_mask(self, mask, mask_color=None, alpha=0.5):
         if mask_color is not None:
@@ -53,7 +55,7 @@ class View:
         mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
         return mask_image
     
-    def visualize_overlay(self, img_3D, gt_3D, seg_3D, idx=0, alpha=0.6):
+    def visualize_overlay(self, img_3D, gt_3D=None, seg_3D=None, idx=0, alpha=0.6):
         # Check if the image is grayscale and convert to RGB
         if img_3D[idx].ndim == 2:
             img_3D_rgb = np.stack((img_3D[idx],) * 3, axis=-1)
@@ -66,11 +68,12 @@ class View:
         # Create the overlay figure
         fig, ax = plt.subplots(figsize=(8, 8))
         ax.imshow(img_resized)
-        # Add the mask
+        # Add the segmentation mask
         mask_color = [0.80, 0.82, 0.36]
-        mask_image = (self.show_mask(seg_3D[idx], mask_color, alpha) * 255).astype(np.uint8)
-        mask_resized = np.array(Image.fromarray(mask_image).resize((512, 512)))
-        ax.imshow(mask_resized, alpha=alpha)
+        if seg_3D is not None:
+            mask_image = (self.show_mask(seg_3D[idx], mask_color, alpha) * 255).astype(np.uint8)
+            mask_resized = np.array(Image.fromarray(mask_image).resize((512, 512)))
+            ax.imshow(mask_resized, alpha=alpha)
         ax.axis('off')
         fig.tight_layout()
         return fig
@@ -80,7 +83,7 @@ class View:
             st.subheader("Segmented Image")
             idx = len(segmented_image['imgs']) // 2
             fig = self.visualize_overlay(segmented_image['imgs'], 
-                                         segmented_image['gts'], 
+                                         None, 
                                          segmented_image['segs'], 
                                          idx=idx, alpha=.6)
             st.pyplot(fig)
@@ -129,19 +132,11 @@ class Controller:
                 st.error("Error during segmentation")
                 return None
 
-    def handle_image(self, image):
-        if image:
-            st.session_state.image = self.get_mid_layer(image)
+    def handle_image(self, image_path):
+        if image_path:
+            st.session_state.image = np.load(image_path, allow_pickle=True)
             st.session_state.input_given = True
             st.rerun()
-
-    def get_mid_layer(self, npz_file_path):
-        npz_data = np.load(npz_file_path)
-        images_key = 'imgs' if 'imgs' in npz_data else 'segs'
-        imgs = npz_data[images_key]
-        mid_layer_index = len(imgs) // 2
-        mid_layer = imgs[mid_layer_index]
-        return mid_layer
 
     def run(self):
         left_column, right_column = st.columns(2)
@@ -162,8 +157,8 @@ class Controller:
 
             if self.view.show_submit_button():
                 segmented_image = self.run_sam(st.session_state.image_name)
-                segmented_image = np.load(segmented_image)
                 if segmented_image:
+                    segmented_image = np.load(segmented_image, allow_pickle=True)
                     self.view.show_segmented_image(right_column, segmented_image)
                     # image_bytes = self.pil_to_bytes(segmented_image)
                     # self.view.show_download_button(image_bytes)
