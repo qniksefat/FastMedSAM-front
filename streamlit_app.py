@@ -4,11 +4,46 @@ from io import BytesIO
 import numpy as np
 import requests
 import os
+from matplotlib import pyplot as plt
 
 ENDPOINT = os.environ.get("ENDPOINT", "0.0.0.0:8080")
 
 SEGMENT_ENDPOINT = f"http://{ENDPOINT}/segment/"
 UPLOAD_ENDPOINT = f"http://{ENDPOINT}/upload/"
+
+
+def show_mask(mask, mask_color=None, alpha=0.5):
+    if mask_color is not None:
+        color = np.concatenate([mask_color, np.array([alpha])], axis=0)
+    else:
+        color = np.array([251 / 255, 252 / 255, 30 / 255, alpha])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    return mask_image
+
+
+def visualize_overlay(img_3D, gt_3D, seg_3D, idx=0, alpha=0.6):
+    # Check if the image is grayscale and convert to RGB
+    if img_3D[idx].ndim == 2:
+        img_3D_rgb = np.stack((img_3D[idx],) * 3, axis=-1)
+    else:
+        img_3D_rgb = img_3D[idx]
+    # Normalize the image to 0-255 range
+    img_3D_rgb = (img_3D_rgb * 255).astype(np.uint8)
+    # Resize the image to fit the overlay size if necessary
+    img_resized = np.array(Image.fromarray(img_3D_rgb).resize((512, 512)))
+    # Create the overlay figure
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(img_resized)
+    # Add the mask
+    mask_color = [0.80, 0.82, 0.36]
+    mask_image = (show_mask(seg_3D[idx], mask_color, alpha) * 255).astype(np.uint8)
+    mask_resized = np.array(Image.fromarray(mask_image).resize((512, 512)))
+    ax.imshow(mask_resized, alpha=alpha)
+    ax.axis('off')
+    fig.tight_layout()
+    return fig
+
 
 class View:
     def __init__(self):
@@ -45,8 +80,12 @@ class View:
     def show_segmented_image(self, right_column, segmented_image):
         with right_column:
             st.subheader("Segmented Image")
-            st.image(segmented_image)
- 
+            imgs, gt_3D, seg_3D = segmented_image['imgs'], segmented_image['gts'], segmented_image['segs']
+            idx = len(imgs) // 2
+            fig = visualize_overlay(imgs, gt_3D, seg_3D, 
+                                    idx=idx, alpha=.6)
+            st.pyplot(fig)
+
     def show_download_button(self, image_bytes):
         st.sidebar.title("Download Result")
         st.sidebar.download_button(label="Click to Download", data=image_bytes,
@@ -85,7 +124,7 @@ class Controller:
         with st.spinner("Segmenting..."):
             resp = requests.get(SEGMENT_ENDPOINT, params={"filename": image_name})
             if resp.status_code == 200:
-                segmented_image = Image.open(BytesIO(resp.content))
+                segmented_image = BytesIO(resp.content)
                 return segmented_image
             else:
                 st.error("Error during segmentation")
@@ -115,14 +154,15 @@ class Controller:
             sample_image_path = self.view.show_samples_section()
             if sample_image_path:
                 self.handle_image(sample_image_path)
+                
         else:
-
             self.view.show_original_image(left_column, st.session_state.image)
 
             st.session_state.text_prompt = self.view.show_prompt_input()
 
             if self.view.show_submit_button():
                 segmented_image = self.run_sam(st.session_state.image_name)
+                segmented_image = np.load(segmented_image)
                 if segmented_image:
                     self.view.show_segmented_image(right_column, segmented_image)
                     image_bytes = self.pil_to_bytes(segmented_image)
