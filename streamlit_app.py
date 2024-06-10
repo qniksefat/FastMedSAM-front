@@ -19,23 +19,21 @@ class View:
 
     def show_upload_section(self):
         st.sidebar.title("Upload Your Image")
-        file = st.sidebar.file_uploader("Choose an image", label_visibility="collapsed",
-                                        type=['npz'])
-        if file is not None:
-            resp = requests.post(UPLOAD_ENDPOINT, files={"file": file.getvalue()})
-            if resp.status_code == 200:
-                st.session_state.image_name = resp.json().get("filename")
-                return file
-            else:
-                st.error("Error uploading image")
-        return None
+        file = st.sidebar.file_uploader("Choose an npz file", label_visibility="collapsed", type=['npz'])
+        return file
 
     def show_samples_section(self):
         st.sidebar.title("Or Choose a Sample Image")
-        if st.sidebar.button("Sample 1"):
-            return "static/sample1.npz"
-        if st.sidebar.button("Sample 2"):
-            return "static/sample2.npz"
+        col1, col2 = st.sidebar.columns(2)
+        with st.sidebar:
+            with col1:
+                if st.button("Sample 1"):
+                    path = "static/sample1.npz"
+                    return BytesIO(open(path, "rb").read())
+            with col2:
+                if st.button("Sample 2"):
+                    path = "static/sample2.npz"
+                    return BytesIO(open(path, "rb").read())
         return None
 
     def show_original_image(self, left_column, original_image):
@@ -43,10 +41,10 @@ class View:
             st.subheader("Original Image")
             idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(original_image['imgs']) // 2
             fig = self.visualize_overlay(original_image['imgs'], 
-                                         None, None, idx=idx, alpha=.6)
+                                         None, None, idx=idx, alpha=0.6)
             st.pyplot(fig)
     
-    def show_mask(self, mask, mask_color=None, alpha=0.5):
+    def show_mask(self, mask, mask_color=None, alpha=0.6):
         if mask_color is not None:
             color = np.concatenate([mask_color, np.array([alpha])], axis=0)
         else:
@@ -78,7 +76,9 @@ class View:
         fig.tight_layout()
         return fig
 
+    # with column
     def show_segmented_image(self, right_column, segmented_image):
+        segmented_image = np.load(segmented_image, allow_pickle=True)
         with right_column:
             st.subheader("Segmented Image")
             idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(segmented_image['imgs']) // 2
@@ -88,10 +88,14 @@ class View:
                                          idx=idx, alpha=.6)
             st.pyplot(fig)
 
-    def show_download_button(self, image_bytes):
+    def show_download_button(self, segmented_image):
         st.sidebar.title("Download Result")
-        st.sidebar.download_button(label="Click to Download", data=image_bytes,
-                                    file_name="segmented_image.png", mime="image/png")
+        st.sidebar.download_button(
+            label="Download Segmented Image",
+            data=segmented_image,
+            file_name="segmented_image.npz",
+            mime="application/octet-stream"
+        )
 
     def show_refresh_button(self):
         st.sidebar.title("Want to try another image?")
@@ -121,31 +125,44 @@ class Controller:
         if 'segmented_image' not in st.session_state:
             st.session_state.segmented_image = None
 
-    def run_sam(self, image_name):
+    def segment_image(self, image_name):
         with st.spinner("Segmenting..."):
             resp = requests.get(SEGMENT_ENDPOINT, params={"filename": image_name})
             if resp.status_code == 200:
                 segmented_image = BytesIO(resp.content)
                 return segmented_image
             else:
-                st.error("Error during segmentation")
+                st.error(f"Error segmenting image {image_name}")
                 return None
 
+    # merge with upload_image_to_server
     def handle_image(self, image_path):
         if image_path:
             st.session_state.image = np.load(image_path, allow_pickle=True)
             st.session_state.input_given = True
             st.rerun()
 
+    def upload_image_to_server(self, file):
+        if file:
+            resp = requests.post(UPLOAD_ENDPOINT, files={"file": file.getvalue()})
+            if resp.status_code == 200:
+                st.session_state.image_name = resp.json().get("filename")
+                self.handle_image(file)
+                return file
+            else:
+                st.error("Error uploading image")
+        return None
+
     def run(self):
         if not st.session_state.input_given:
-            file = self.view.show_upload_section()
-            if file:
-                self.handle_image(file)
 
-            sample_image_path = self.view.show_samples_section()
-            if sample_image_path:
-                self.handle_image(sample_image_path)
+            uploaded_file = self.view.show_upload_section()
+            if uploaded_file:
+                self.upload_image_to_server(uploaded_file)
+
+            sample_file = self.view.show_samples_section()
+            if sample_file:
+                self.upload_image_to_server(sample_file)
                 
         else:
             slice_range = len(st.session_state.image['imgs']) - 1
@@ -156,11 +173,11 @@ class Controller:
 
             if st.session_state.segmented_image is None:
                 if self.view.show_submit_button():
-                    segmented_image = self.run_sam(st.session_state.image_name)
-                    st.session_state.segmented_image = np.load(segmented_image, allow_pickle=True)
+                    st.session_state.segmented_image = self.segment_image(st.session_state.image_name)
                     st.rerun()
             else:
                 self.view.show_segmented_image(right_column, st.session_state.segmented_image)
+                self.view.show_download_button(st.session_state.segmented_image)
 
             if self.view.show_refresh_button():
                 st.session_state.input_given = False
