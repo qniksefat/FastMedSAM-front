@@ -3,13 +3,14 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import requests
-import os
 from matplotlib import pyplot as plt
 
-ENDPOINT = os.environ.get("ENDPOINT", "0.0.0.0:8080")
+ENDPOINT = (st.secrets["ENDPOINT"] 
+            if "ENDPOINT" in st.secrets 
+            else "http://localhost:8080")
 
-SEGMENT_ENDPOINT = f"http://{ENDPOINT}/segment/"
-UPLOAD_ENDPOINT = f"http://{ENDPOINT}/upload/"
+SEGMENT_ENDPOINT = f"{ENDPOINT}/segment/"
+UPLOAD_ENDPOINT = f"{ENDPOINT}/upload/"
 
 
 class View:
@@ -39,7 +40,9 @@ class View:
     def show_original_image(self, column, original_image):
         with column:
             st.subheader("Original Image")
-            idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(original_image['imgs']) // 2
+            idx = (st.session_state.slice_index 
+                   if 'slice_index' in st.session_state 
+                   else len(original_image['imgs']) // 2)
             fig = self.visualize_overlay(original_image['imgs'], 
                                          None, None, idx=idx, alpha=0.6)
             st.pyplot(fig)
@@ -76,12 +79,13 @@ class View:
         fig.tight_layout()
         return fig
 
-    # with column
     def show_segmented_image(self, column, segmented_image):
         segmented_image = np.load(segmented_image, allow_pickle=True)
         with column:
             st.subheader("Segmented Image")
-            idx = st.session_state.slice_index if 'slice_index' in st.session_state else len(segmented_image['imgs']) // 2
+            idx = (st.session_state.slice_index 
+                   if 'slice_index' in st.session_state 
+                   else len(segmented_image['imgs']) // 2)
             fig = self.visualize_overlay(segmented_image['imgs'], 
                                          None, 
                                          segmented_image['segs'], 
@@ -127,7 +131,8 @@ class Controller:
 
     def segment_image(self, image_name):
         with st.spinner("Segmenting..."):
-            resp = requests.get(SEGMENT_ENDPOINT, params={"filename": image_name})
+            resp = requests.get(SEGMENT_ENDPOINT, 
+                                params={"filename": image_name})
             if resp.status_code == 200:
                 segmented_image = BytesIO(resp.content)
                 return segmented_image
@@ -137,7 +142,8 @@ class Controller:
 
     def upload_image_to_server(self, file):
         if file:
-            resp = requests.post(UPLOAD_ENDPOINT, files={"file": file.getvalue()})
+            resp = requests.post(UPLOAD_ENDPOINT, 
+                                 files={"file": file.getvalue()})
             if resp.status_code == 200:
                 st.session_state.image_name = resp.json().get("filename")
                 st.session_state.image = np.load(file, allow_pickle=True)
