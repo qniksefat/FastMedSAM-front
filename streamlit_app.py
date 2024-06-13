@@ -18,6 +18,7 @@ class View:
     def __init__(self):
         st.set_page_config(page_title="Fast MedSAM", page_icon="✂️", layout="wide")
         st.title("Fast Segmentation of Medical Images")
+        st.sidebar.warning("Running on CPU is substantially slow. Consider a GPU instance.", icon="⚠️")
 
     def show_upload_section(self) -> BytesIO:
         """Display the upload section in the sidebar and return the uploaded file."""
